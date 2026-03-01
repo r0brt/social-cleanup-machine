@@ -24,6 +24,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["backend"]
 
+[tool.uv]
+package = false
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
