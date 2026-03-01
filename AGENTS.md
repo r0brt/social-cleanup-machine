@@ -148,6 +148,49 @@ Mandatory frontend command set:
    - docs updated
    - residual risks
 
+### 11.1 Branch Strategy (Mandatory)
+- Branching model: trunk-based development with short-lived branches.
+- `main` is the trunk and must remain releasable at all times.
+- All implementation work must start from a branch off current `main`.
+- Branch naming conventions:
+  - `feat/<ticket>-<slug>`
+  - `fix/<ticket>-<slug>`
+  - `chore/<slug>`
+  - `docs/<slug>`
+  - `refactor/<slug>`
+  - `test/<slug>`
+  - `hotfix/<slug>` (only for emergency fixes)
+- Branch lifetime target: under 2 days. Rebase or sync frequently from `main`.
+
+### 11.2 main Branch Protection (Mandatory)
+- Direct pushes to `main` are forbidden.
+- Force-pushes to `main` are forbidden.
+- All changes to `main` must go through pull requests.
+- `main` protection baseline:
+  - require pull request before merging
+  - minimum 1 approving review
+  - dismiss stale approvals when new commits are pushed
+  - require Code Owners review
+  - require conversation resolution before merge
+  - require status checks to pass
+  - require branch up-to-date with `main` before merge
+  - require linear history
+  - disallow force pushes and deletions
+  - include administrators: disabled by default (Balanced profile)
+
+### 11.3 Merge Policy
+- Merge method for `main`: squash merge only.
+- PR title must follow Conventional Commits.
+- Required PR template sections must be completed.
+- Keep each PR small, reviewable, and scoped to one coherent change.
+- Auto-delete merged branches should be enabled in repository settings.
+
+### 11.4 Exception Path
+- Emergency changes must use `hotfix/<slug>` branches.
+- Emergency changes still require a PR to `main`; direct commits remain forbidden.
+- Expedited review is allowed for hotfix PRs, but approval and required checks are still mandatory.
+- Every emergency merge requires postmortem follow-up documenting cause, impact, and preventive action.
+
 ## 12. Documentation Policy (PRD/PLAN/arc42/ADR triggers)
 Documentation is part of the deliverable, never optional.
 
