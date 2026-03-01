@@ -32,10 +32,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
 
       - name: Run dependency vulnerability scans
         shell: bash
@@ -107,8 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           status=0
-          while IFS= read -r uses_line; do
-            action_ref="${uses_line#uses: }"
+          while IFS= read -r action_ref; do
             action_ref="$(echo "$action_ref" | tr -d '\"')"
             if [[ "$action_ref" == ./* ]]; then
               continue
@@ -122,7 +117,10 @@ jobs:
                 status=1
               fi
             fi
-          done < <(grep -RhoE 'uses:[[:space:]]+[^[:space:]]+' .github/workflows/*.yml)
+          done < <(
+            grep -RhoE '^[[:space:]]*uses:[[:space:]]+[^[:space:]]+' .github/workflows/*.yml \
+              | sed -E 's/^[[:space:]]*uses:[[:space:]]+//'
+          )
           exit "$status"
 
       - name: Setup Python
@@ -134,10 +132,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
 
       - name: Run static analysis
         shell: bash
