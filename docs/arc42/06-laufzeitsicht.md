@@ -1,5 +1,10 @@
 # 06 Laufzeitsicht
 
+## Szenario 0 — Health-Check (Increment 1)
+1. Client ruft `GET /api/v1/health` auf.
+2. API-Modul beantwortet den Request ohne Analyse-/Persistenzlogik.
+3. Response bestätigt Verfügbarkeit und API-Version (`ok`, `v1`).
+
 ## Szenario A — Erfolgsfall
 1. UI sendet Text an Backend.
 2. Analyse-Modul ruft LLM über Adapter auf.

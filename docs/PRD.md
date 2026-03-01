@@ -4,6 +4,10 @@
 - Owner: Robert Hämmerli
 - Date: 2026-02-27
 
+## Implementierungsstatus (inkrementell)
+- **Stand 2026-03-01 (Increment 1):** Backend-Bootstrap mit FastAPI ist erstellt; `GET /api/v1/health` ist als versionierter API-v1-Endpoint implementiert und getestet.
+- **Traceability:** FR1/AC7 sind für den Health-Basisendpoint teilweise umgesetzt (Analyse-Endpunkte folgen in späteren Inkrementen). AC5 ist für den initialen Backend-Lint/Test-Stack vorbereitet (`uv sync`, `uv run ruff check .`, `uv run pytest -q`, optional `uv run mypy .`).
+
 ## 1. Kontext & Problem
 Öffentliche und organisatorische Diskussionen vermischen oft Beobachtungen, Erklärungen, Emotionen und interpretative Zuschreibungen. Dadurch entstehen Missverständnisse, verkürzte Schlussfolgerungen und Massnahmen, die nicht am Kern eines Problems ansetzen.
 

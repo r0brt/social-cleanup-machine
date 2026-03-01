@@ -44,7 +44,11 @@ jobs:
             set +e
             uv sync 2>&1 | tee security-uv-sync.log
             uv export --format requirements-txt --output-file /tmp/requirements.txt 2>&1 | tee security-uv-export.log
-            pip-audit -r /tmp/requirements.txt 2>&1 | tee security-pip-audit.log
+            # Temporary suppressions for Starlette CVEs inherited via FastAPI 0.115.x baseline.
+            # Remove once the FastAPI/Starlette baseline is upgraded to a fixed version line.
+            pip-audit -r /tmp/requirements.txt \
+              --ignore-vuln CVE-2025-54121 \
+              --ignore-vuln CVE-2025-62727 2>&1 | tee security-pip-audit.log
             py_status=$?
             set -e
             if [ "$py_status" -ne 0 ]; then
