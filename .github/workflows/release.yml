@@ -69,7 +69,7 @@ jobs:
     needs: resolve-release
     steps:
       - name: Create or update GitHub release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
           TARGET_REF: ${{ needs.resolve-release.outputs.target_ref }}
