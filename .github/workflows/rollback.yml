@@ -1,0 +1,46 @@
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: "Previously successful release tag to roll back to (e.g., v1.2.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  deployments: write
+
+jobs:
+  rollback-production:
+    name: rollback-production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Validate rollback tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.target_tag }}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid rollback tag: $tag"
+            exit 1
+          fi
+
+      - name: Trigger rollback deployment
+        shell: bash
+        env:
+          PRODUCTION_DEPLOY_WEBHOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          payload='{"environment":"production","action":"rollback","tag":"${{ inputs.target_tag }}"}'
+          if [ -z "${PRODUCTION_DEPLOY_WEBHOOK_URL:-}" ]; then
+            echo "PRODUCTION_DEPLOY_WEBHOOK_URL is not configured."
+            echo "Configure this secret to enable real rollback execution."
+            exit 1
+          fi
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "$PRODUCTION_DEPLOY_WEBHOOK_URL"

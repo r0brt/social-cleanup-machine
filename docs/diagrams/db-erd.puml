@@ -1,0 +1,23 @@
+@startuml
+
+title SCM DB-ERD (Platzhalter)
+
+entity "analysis" as analysis {
+  *id : uuid
+  --
+  input_text : text
+  status : string
+  created_at : timestamp
+}
+
+entity "analysis_result" as result {
+  *id : uuid
+  --
+  analysis_id : uuid
+  json_payload : json
+  validation_status : string
+}
+
+analysis ||--o{ result : has
+
+@enduml

@@ -1,0 +1,20 @@
+@startuml
+
+title SCM Komponenten-Sicht (Platzhalter)
+
+rectangle "API Controller" as C1
+rectangle "Analyse-Orchestrator" as C2
+rectangle "JSON Validator" as C3
+rectangle "Repair Service" as C4
+rectangle "Repository" as C5
+database "PostgreSQL" as DB
+cloud "LLM Provider" as LLM
+
+C1 --> C2
+C2 --> LLM
+C2 --> C3
+C3 --> C4 : bei Fehler
+C2 --> C5
+C5 --> DB
+
+@enduml

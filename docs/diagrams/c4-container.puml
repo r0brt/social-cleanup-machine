@@ -1,0 +1,17 @@
+@startuml
+
+title SCM Container-Sicht (Platzhalter)
+
+rectangle "Frontend" as FE
+rectangle "Backend API" as API
+rectangle "Analyse + Validator + Repair" as CORE
+database "PostgreSQL" as DB
+cloud "LLM Provider" as LLM
+
+FE --> API : HTTP JSON
+API --> CORE : interne Aufrufe
+CORE --> LLM : Prompt/Response
+CORE --> DB : persistieren
+API --> FE : Ergebnis + Status
+
+@enduml

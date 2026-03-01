@@ -1,0 +1,56 @@
+name: "Incident Postmortem"
+description: "Record root cause, impact, and corrective actions after an incident or emergency hotfix."
+title: "[postmortem]: "
+labels:
+  - incident
+  - postmortem
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Briefly describe the incident.
+      placeholder: What happened and when?
+    validations:
+      required: true
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: What users/systems were affected, and how severe was it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: timeline
+    attributes:
+      label: Timeline
+      description: Key timestamps for detection, mitigation, recovery, and communication.
+    validations:
+      required: true
+
+  - type: textarea
+    id: root-cause
+    attributes:
+      label: Root Cause
+      description: Technical and process root causes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: corrective-actions
+    attributes:
+      label: Corrective Actions
+      description: Immediate fixes and long-term prevention steps with owners.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: governance
+    attributes:
+      label: Governance Follow-up
+      options:
+        - label: Relevant docs were updated (PRD/PLAN/arc42/ADR as applicable)
+        - label: CI/CD guardrails were added or strengthened
+        - label: Rollback runbook and alerts were reviewed

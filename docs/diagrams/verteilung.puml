@@ -1,0 +1,23 @@
+@startuml
+
+title SCM Verteilungssicht (Platzhalter)
+
+node "Client" {
+  component "Frontend" as FE
+}
+
+node "App Host" {
+  component "Backend (Monolith)" as BE
+}
+
+node "DB Host" {
+  database "PostgreSQL" as DB
+}
+
+cloud "LLM Provider" as LLM
+
+FE --> BE : HTTPS
+BE --> DB : SQL
+BE --> LLM : HTTPS API
+
+@enduml

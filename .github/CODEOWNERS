@@ -1,0 +1,19 @@
+# Replace @robert with your actual GitHub handle/team if different.
+* @robert
+
+# Backend ownership
+/backend/ @r0brt
+/alembic/ @r0brt
+/pyproject.toml @r0brt
+/uv.lock @r0brt
+
+# Frontend ownership
+/frontend/ @r0brt
+/package.json @r0brt
+/package-lock.json @r0brt
+
+# Architecture and governance ownership
+/docs/ @r0brt
+/PLAN.md @r0brt
+/AGENTS.md @r0brt
+/.github/ @r0brt

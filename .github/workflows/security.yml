@@ -1,0 +1,204 @@
+name: security
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-scan:
+    name: dependency-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Run dependency vulnerability scans
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+
+          if [ -f pyproject.toml ]; then
+            python -m pip install --upgrade pip uv pip-audit
+            set +e
+            uv sync 2>&1 | tee security-uv-sync.log
+            uv export --format requirements-txt --output-file /tmp/requirements.txt 2>&1 | tee security-uv-export.log
+            pip-audit -r /tmp/requirements.txt 2>&1 | tee security-pip-audit.log
+            py_status=$?
+            set -e
+            if [ "$py_status" -ne 0 ]; then
+              status=1
+            fi
+          else
+            echo "No pyproject.toml found. Skipping Python dependency scan." | tee security-pip-audit.log
+          fi
+
+          if [ -f frontend/package.json ]; then
+            project_dir="frontend"
+          elif [ -f package.json ]; then
+            project_dir="."
+          else
+            project_dir=""
+          fi
+
+          if [ -n "$project_dir" ]; then
+            set +e
+            if [ "$project_dir" = "." ]; then
+              npm ci 2>&1 | tee security-npm-ci.log
+              npm audit --audit-level=high 2>&1 | tee security-npm-audit.log
+            else
+              npm --prefix "$project_dir" ci 2>&1 | tee security-npm-ci.log
+              npm --prefix "$project_dir" audit --audit-level=high 2>&1 | tee security-npm-audit.log
+            fi
+            node_status=$?
+            set -e
+            if [ "$node_status" -ne 0 ]; then
+              status=1
+            fi
+          else
+            echo "No package.json found. Skipping npm dependency scan." | tee security-npm-audit.log
+          fi
+
+          exit "$status"
+
+      - name: Upload dependency scan artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-scan-artifacts
+          path: |
+            security-*.log
+          if-no-files-found: ignore
+
+  static-analysis:
+    name: static-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enforce SHA pinning for third-party GitHub Actions
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+          while IFS= read -r uses_line; do
+            action_ref="${uses_line#uses: }"
+            action_ref="$(echo "$action_ref" | tr -d '\"')"
+            if [[ "$action_ref" == ./* ]]; then
+              continue
+            fi
+            action_name="${action_ref%@*}"
+            action_version="${action_ref##*@}"
+            action_owner="${action_name%%/*}"
+            if [ "$action_owner" != "actions" ]; then
+              if [[ ! "$action_version" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "Third-party action is not pinned to a commit SHA: $action_ref"
+                status=1
+              fi
+            fi
+          done < <(grep -RhoE 'uses:[[:space:]]+[^[:space:]]+' .github/workflows/*.yml)
+          exit "$status"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Run static analysis
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=0
+
+          if git grep -nE '(AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36}|-----BEGIN (RSA|OPENSSH|EC) PRIVATE KEY-----)' -- . >/tmp/security-secret-scan.log; then
+            echo "Potential secret-like token detected. Review /tmp/security-secret-scan.log."
+            cat /tmp/security-secret-scan.log
+            status=1
+          fi
+
+          if [ -f pyproject.toml ]; then
+            python -m pip install --upgrade pip uv
+            set +e
+            uv sync 2>&1 | tee security-static-uv-sync.log
+            uv run ruff check . 2>&1 | tee security-static-ruff.log
+            py_static_status=$?
+            set -e
+            if [ "$py_static_status" -ne 0 ]; then
+              status=1
+            fi
+          else
+            echo "No pyproject.toml found. Skipping Python static analysis." | tee security-static-ruff.log
+          fi
+
+          if [ -f frontend/package.json ]; then
+            project_dir="frontend"
+          elif [ -f package.json ]; then
+            project_dir="."
+          else
+            project_dir=""
+          fi
+
+          if [ -n "$project_dir" ]; then
+            set +e
+            if [ "$project_dir" = "." ]; then
+              npm ci 2>&1 | tee security-static-npm-ci.log
+              npm run lint --if-present 2>&1 | tee security-static-lint.log
+            else
+              npm --prefix "$project_dir" ci 2>&1 | tee security-static-npm-ci.log
+              npm --prefix "$project_dir" run lint --if-present 2>&1 | tee security-static-lint.log
+            fi
+            node_static_status=$?
+            set -e
+            if [ "$node_static_status" -ne 0 ]; then
+              status=1
+            fi
+          else
+            echo "No package.json found. Skipping frontend static analysis." | tee security-static-lint.log
+          fi
+
+          exit "$status"
+
+      - name: Upload static analysis artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-artifacts
+          path: |
+            security-static-*.log
+            /tmp/security-secret-scan.log
+          if-no-files-found: ignore

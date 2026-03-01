@@ -1,0 +1,17 @@
+@startuml
+
+title SCM Kontextdiagramm (Platzhalter)
+
+actor "Nutzer:in" as User
+rectangle "SCM Frontend" as FE
+rectangle "SCM Backend (Monolith)" as BE
+database "PostgreSQL" as DB
+cloud "LLM Provider" as LLM
+
+User --> FE : Eingabe Problemtext
+FE --> BE : Analyse anfordern
+BE --> LLM : Analyse-Prompt
+BE --> DB : Ergebnis speichern
+FE <-- BE : Strukturierte 6-Ebenen-Ausgabe
+
+@enduml

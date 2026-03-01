@@ -1,0 +1,109 @@
+name: ci
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: docs-governance-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  docs-governance:
+    name: docs-governance
+    runs-on: ubuntu-latest
+    env:
+      PR_BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce documentation governance
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          head_sha="${{ github.event.pull_request.head.sha }}"
+          changed_files="$(git diff --name-only "$base_sha" "$head_sha")"
+
+          echo "Changed files:"
+          echo "$changed_files"
+
+          has_match() {
+            local pattern="$1"
+            echo "$changed_files" | grep -Eq "$pattern"
+          }
+
+          missing_sections=0
+          for section in \
+            "## Scope" \
+            "## Design Rationale" \
+            "## Tests Run" \
+            "## Docs Updated" \
+            "## Residual Risks"
+          do
+            if ! echo "$PR_BODY" | grep -Fq "$section"; then
+              echo "Missing required PR section: $section"
+              missing_sections=1
+            fi
+          done
+          if [ "$missing_sections" -ne 0 ]; then
+            exit 1
+          fi
+
+          if ! echo "$PR_BODY" | grep -Eq '\- \[[xX]\] (docs/PRD\.md updated|arc42 updated|ADR added/updated|PLAN\.md updated|No documentation update required)'; then
+            echo "Docs Updated section must mark at least one checkbox."
+            exit 1
+          fi
+
+          if echo "$PR_BODY" | grep -Eq '\- \[[xX]\] No documentation update required'; then
+            if ! echo "$PR_BODY" | grep -Eq '^No-Docs-Reason:[[:space:]].+'; then
+              echo "No documentation update selected, but No-Docs-Reason is missing."
+              exit 1
+            fi
+          fi
+
+          if has_match '^(backend/|frontend/|schemas/|api/|alembic/|docker-compose\.yml$)'; then
+            if ! has_match '^docs/PRD\.md$'; then
+              echo "Behavior/contract-relevant changes require docs/PRD.md update."
+              exit 1
+            fi
+            if ! has_match '^docs/arc42/'; then
+              echo "Behavior/contract-relevant changes require at least one docs/arc42 update."
+              exit 1
+            fi
+          fi
+
+          if has_match '^(backend/(application|domain|infrastructure)/|docs/arc42/(04-loesungsstrategie|05-bausteinsicht|06-laufzeitsicht|07-verteilungssicht|09-architekturentscheidungen)\.md$|docs/diagrams/(c4-container|c4-komponenten|verteilung|laufzeit-sequenz)\.puml$|docker-compose\.yml$)'; then
+            if ! has_match '^docs/adr/ADR-.*\.md$'; then
+              if ! echo "$PR_BODY" | grep -Eq '^ADR-EXEMPT:[[:space:]].+'; then
+                echo "Architecture-relevant changes require ADR update or ADR-EXEMPT explanation."
+                exit 1
+              fi
+            fi
+          fi
+
+          if has_match '^\.github/workflows/(ci-main|release|rollback)\.yml$'; then
+            if ! has_match '^PLAN\.md$'; then
+              if ! echo "$PR_BODY" | grep -Eq '^PLAN-EXEMPT:[[:space:]].+'; then
+                echo "Delivery-sequencing-relevant changes require PLAN.md update or PLAN-EXEMPT explanation."
+                exit 1
+              fi
+            fi
+          fi
+
+          echo "Documentation governance checks passed."

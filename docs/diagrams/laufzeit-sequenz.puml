@@ -1,0 +1,27 @@
+@startuml
+
+title SCM Laufzeit-Sequenz (Platzhalter)
+
+actor User
+participant Frontend
+participant Backend
+participant Validator
+participant Repair
+database DB
+participant LLM
+
+User -> Frontend : Text eingeben
+Frontend -> Backend : Analyse starten
+Backend -> LLM : Prompt senden
+LLM --> Backend : JSON Antwort
+Backend -> Validator : prüfen
+alt ungültig
+  Validator -> Repair : Reparatur anfordern
+  Repair -> LLM : Repair-Prompt
+  LLM --> Repair : korrigierte Antwort
+  Repair --> Backend : Ergebnis
+end
+Backend -> DB : speichern
+Backend --> Frontend : Status + Ergebnis
+
+@enduml

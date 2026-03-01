@@ -1,0 +1,276 @@
+name: ci-main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      contract: ${{ steps.filter.outputs.contract }}
+      base_sha: ${{ steps.filter.outputs.base_sha }}
+      head_sha: ${{ steps.filter.outputs.head_sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed areas
+        id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          base_sha="${{ github.event.before }}"
+          head_sha="${{ github.sha }}"
+          if [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            base_sha="$(git rev-list --max-parents=0 HEAD)"
+          fi
+          changed_files="$(git diff --name-only "$base_sha" "$head_sha")"
+
+          echo "Changed files:"
+          echo "$changed_files"
+
+          has_match() {
+            local pattern="$1"
+            if echo "$changed_files" | grep -Eq "$pattern"; then
+              echo "true"
+            else
+              echo "false"
+            fi
+          }
+
+          echo "backend=$(has_match '^(backend/|alembic/|alembic\.ini$|pyproject\.toml$|uv\.lock$|tests/)')" >> "$GITHUB_OUTPUT"
+          echo "frontend=$(has_match '^(frontend/|package\.json$|package-lock\.json$|tsconfig.*\.json$|vite\.config\.)')" >> "$GITHUB_OUTPUT"
+          echo "contract=$(has_match '^(schemas/|api/|backend/(api|application|domain|infrastructure)/|tests/contracts/|alembic/|alembic\.ini$)')" >> "$GITHUB_OUTPUT"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+  backend-lint-type-test:
+    name: backend-lint-type-test
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install uv
+        shell: bash
+        run: python -m pip install --upgrade pip uv
+
+      - name: Lint, type check, and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f pyproject.toml ]; then
+            echo "No pyproject.toml found. Skipping backend checks."
+            exit 0
+          fi
+
+          set -o pipefail
+          uv sync 2>&1 | tee backend-main-uv-sync.log
+          uv run ruff check . 2>&1 | tee backend-main-ruff.log
+          uv run pytest -q --junitxml=pytest-main-report.xml 2>&1 | tee backend-main-pytest.log
+          if [ -f mypy.ini ] || [ -f .mypy.ini ] || grep -q '^\[tool\.mypy\]' pyproject.toml; then
+            uv run mypy . 2>&1 | tee backend-main-mypy.log
+          else
+            echo "mypy not configured. Skipping." | tee backend-main-mypy.log
+          fi
+
+      - name: Upload backend artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-main-artifacts
+          path: |
+            backend-main-*.log
+            pytest-main-report.xml
+          if-no-files-found: ignore
+
+  frontend-test-build:
+    name: frontend-test-build
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Test and build frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f frontend/package.json ]; then
+            project_dir="frontend"
+          elif [ -f package.json ]; then
+            project_dir="."
+          else
+            echo "No package.json found. Skipping frontend checks."
+            exit 0
+          fi
+
+          set -o pipefail
+          if [ "$project_dir" = "." ]; then
+            npm ci 2>&1 | tee frontend-main-npm-ci.log
+            npm run test -- --run 2>&1 | tee frontend-main-test.log
+            npm run build 2>&1 | tee frontend-main-build.log
+          else
+            npm --prefix "$project_dir" ci 2>&1 | tee frontend-main-npm-ci.log
+            npm --prefix "$project_dir" run test -- --run 2>&1 | tee frontend-main-test.log
+            npm --prefix "$project_dir" run build 2>&1 | tee frontend-main-build.log
+          fi
+
+      - name: Upload frontend artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-main-artifacts
+          path: |
+            frontend-main-*.log
+          if-no-files-found: ignore
+
+  contract-and-migrations:
+    name: contract-and-migrations
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.contract == 'true' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache uv
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            ~/.cache/pip
+          key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: |
+            uv-${{ runner.os }}-
+
+      - name: Install uv
+        shell: bash
+        run: python -m pip install --upgrade pip uv
+
+      - name: Validate contracts and migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f pyproject.toml ]; then
+            echo "No pyproject.toml found. Skipping contract/migration checks."
+            exit 0
+          fi
+
+          set -o pipefail
+          uv sync 2>&1 | tee contract-main-uv-sync.log
+
+          if [ -d tests/contracts ]; then
+            uv run pytest -q tests/contracts 2>&1 | tee contract-main-tests.log
+          else
+            echo "Contract-related files changed, but tests/contracts is missing."
+            exit 1
+          fi
+
+          changed_files="$(git diff --name-only "${{ needs.changes.outputs.base_sha }}" "${{ needs.changes.outputs.head_sha }}")"
+          schema_pattern='^(backend/.*/models/|backend/.*/models\.py$|backend/infrastructure/(db|persistence)/|schemas/)'
+          migration_pattern='^alembic/versions/.*\.py$'
+          if echo "$changed_files" | grep -Eq "$schema_pattern"; then
+            if ! echo "$changed_files" | grep -Eq "$migration_pattern"; then
+              echo "Schema-related files changed without an Alembic migration under alembic/versions/."
+              exit 1
+            fi
+          fi
+
+          if [ -f alembic.ini ] && [ -d alembic ]; then
+            uv run alembic upgrade head 2>&1 | tee contract-main-alembic.log
+          else
+            echo "Alembic not configured. Skipping alembic upgrade check." | tee contract-main-alembic.log
+          fi
+
+      - name: Upload contract artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-main-artifacts
+          path: |
+            contract-main-*.log
+          if-no-files-found: ignore
+
+  deploy-staging:
+    name: deploy-staging
+    runs-on: ubuntu-latest
+    needs:
+      - backend-lint-type-test
+      - frontend-test-build
+      - contract-and-migrations
+    if: |
+      ${{
+        needs.backend-lint-type-test.result != 'failure' &&
+        needs.backend-lint-type-test.result != 'cancelled' &&
+        needs.frontend-test-build.result != 'failure' &&
+        needs.frontend-test-build.result != 'cancelled' &&
+        needs.contract-and-migrations.result != 'failure' &&
+        needs.contract-and-migrations.result != 'cancelled'
+      }}
+    environment: staging
+    steps:
+      - name: Trigger staging deployment
+        shell: bash
+        env:
+          STAGING_DEPLOY_WEBHOOK_URL: ${{ secrets.STAGING_DEPLOY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          payload='{"environment":"staging","sha":"${{ github.sha }}","ref":"${{ github.ref_name }}"}'
+          if [ -z "${STAGING_DEPLOY_WEBHOOK_URL:-}" ]; then
+            echo "STAGING_DEPLOY_WEBHOOK_URL is not configured."
+            echo "Simulating deployment handoff for commit ${{ github.sha }}."
+            exit 0
+          fi
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "$STAGING_DEPLOY_WEBHOOK_URL"

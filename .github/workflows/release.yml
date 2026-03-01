@@ -1,0 +1,142 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g., v1.2.3)"
+        required: true
+        type: string
+      target_ref:
+        description: "Target branch or commit SHA for manual release"
+        required: false
+        default: "main"
+        type: string
+      dry_run:
+        description: "Create/update release notes only, skip production deploy"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  deployments: write
+
+concurrency:
+  group: release-${{ github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-release:
+    name: resolve-release
+    runs-on: ubuntu-latest
+    outputs:
+      release_tag: ${{ steps.resolve.outputs.release_tag }}
+      target_ref: ${{ steps.resolve.outputs.target_ref }}
+      dry_run: ${{ steps.resolve.outputs.dry_run }}
+    steps:
+      - name: Resolve release inputs
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${{ github.ref_name }}"
+            target_ref="${{ github.sha }}"
+            dry_run="false"
+          else
+            tag="${{ inputs.tag }}"
+            target_ref="${{ inputs.target_ref }}"
+            dry_run="${{ inputs.dry_run }}"
+          fi
+
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: $tag"
+            echo "Use semantic version tags such as v1.2.3 or v1.2.3-rc.1."
+            exit 1
+          fi
+
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "target_ref=$target_ref" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+
+  create-or-update-release:
+    name: create-or-update-release
+    runs-on: ubuntu-latest
+    needs: resolve-release
+    steps:
+      - name: Create or update GitHub release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.resolve-release.outputs.release_tag }}
+          TARGET_REF: ${{ needs.resolve-release.outputs.target_ref }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = process.env.RELEASE_TAG;
+            const target = process.env.TARGET_REF;
+            let existing = null;
+
+            try {
+              const response = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              existing = response.data;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
+            if (existing) {
+              await github.rest.repos.updateRelease({
+                owner,
+                repo,
+                release_id: existing.id,
+                tag_name: tag,
+                target_commitish: target,
+                generate_release_notes: true,
+                draft: false,
+                prerelease: tag.includes("-")
+              });
+              core.info(`Updated release for tag ${tag}.`);
+            } else {
+              await github.rest.repos.createRelease({
+                owner,
+                repo,
+                tag_name: tag,
+                target_commitish: target,
+                generate_release_notes: true,
+                draft: false,
+                prerelease: tag.includes("-")
+              });
+              core.info(`Created release for tag ${tag}.`);
+            }
+
+  deploy-production:
+    name: deploy-production
+    runs-on: ubuntu-latest
+    needs:
+      - resolve-release
+      - create-or-update-release
+    if: ${{ needs.resolve-release.outputs.dry_run != 'true' }}
+    environment: production
+    steps:
+      - name: Trigger production deployment
+        shell: bash
+        env:
+          PRODUCTION_DEPLOY_WEBHOOK_URL: ${{ secrets.PRODUCTION_DEPLOY_WEBHOOK_URL }}
+        run: |
+          set -euo pipefail
+          payload='{"environment":"production","tag":"${{ needs.resolve-release.outputs.release_tag }}","target_ref":"${{ needs.resolve-release.outputs.target_ref }}"}'
+          if [ -z "${PRODUCTION_DEPLOY_WEBHOOK_URL:-}" ]; then
+            echo "PRODUCTION_DEPLOY_WEBHOOK_URL is not configured."
+            echo "Simulating production deployment for ${{ needs.resolve-release.outputs.release_tag }}."
+            exit 0
+          fi
+          curl -fsSL -X POST \
+            -H "Content-Type: application/json" \
+            --data "$payload" \
+            "$PRODUCTION_DEPLOY_WEBHOOK_URL"
