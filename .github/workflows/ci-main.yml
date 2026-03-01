@@ -107,7 +107,7 @@ jobs:
 
       - name: Upload backend artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-main-artifacts
           path: |
@@ -159,7 +159,7 @@ jobs:
 
       - name: Upload frontend artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: frontend-main-artifacts
           path: |
@@ -233,7 +233,7 @@ jobs:
 
       - name: Upload contract artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: contract-main-artifacts
           path: |
